@@ -12,12 +12,14 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 API_BASE = "https://web-production-7d78e.up.railway.app"
 
-# Simple in-memory session store (username -> token)
+# In-memory session store
 sessions = {}
 
-# ---------------------- LOGIN / SIGNUP ----------------------
+# ---------------------- PAGES ----------------------
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
+    # Always pass request object as "request" key
     return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/signup", response_class=HTMLResponse)
@@ -38,7 +40,9 @@ async def signup(request: Request, username: str = Form(...), email: str = Form(
 async def login(request: Request, username: str = Form(...), email: str = Form(...), password: str = Form(...)):
     async with httpx.AsyncClient() as client:
         res = await client.post(f"{API_BASE}/users/login", json={
-            "username": username, "email": email, "password": password
+            "username": username,
+            "email": email,
+            "password": password
         })
     if res.status_code == 200:
         token = res.json().get("token")
@@ -46,7 +50,6 @@ async def login(request: Request, username: str = Form(...), email: str = Form(.
         return RedirectResponse(f"/app/{username}", status_code=303)
     return HTMLResponse(f"Login failed: {res.text}")
 
-# ---------------------- MAIN APP PAGE ----------------------
 @app.get("/app/{username}", response_class=HTMLResponse)
 async def app_page(request: Request, username: str):
     token = sessions.get(username)
