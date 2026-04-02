@@ -6,20 +6,19 @@ import os
 
 app = FastAPI()
 
-# Correct templates path
+# Templates directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 API_BASE = "https://web-production-7d78e.up.railway.app"
 
-# In-memory session store
+# In-memory session storage
 sessions = {}
 
-# ---------------------- PAGES ----------------------
+# ------------------- ROUTES -------------------
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    # Always pass request object as "request" key
     return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/signup", response_class=HTMLResponse)
@@ -27,21 +26,31 @@ async def signup_page(request: Request):
     return templates.TemplateResponse("signup.html", {"request": request})
 
 @app.post("/signup")
-async def signup(request: Request, username: str = Form(...), email: str = Form(...), password: str = Form(...)):
+async def signup(
+    request: Request,
+    username: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...)
+):
     async with httpx.AsyncClient() as client:
         res = await client.post(f"{API_BASE}/users/signup", json={
-            "username": username, "email": email, "password": password
+            "username": username,
+            "email": email,
+            "password": password
         })
     if res.status_code in (200, 201):
         return RedirectResponse("/", status_code=303)
     return HTMLResponse(f"Signup failed: {res.text}")
 
 @app.post("/login")
-async def login(request: Request, username: str = Form(...), email: str = Form(...), password: str = Form(...)):
+async def login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...)
+):
     async with httpx.AsyncClient() as client:
         res = await client.post(f"{API_BASE}/users/login", json={
             "username": username,
-            "email": email,
             "password": password
         })
     if res.status_code == 200:
