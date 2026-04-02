@@ -1,25 +1,116 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Chat App</title>
+    <title>Chat</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial;
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Sidebar */
+        #sidebar {
+            width: 25%;
+            background: #2d3748;
+            color: white;
+            padding: 10px;
+        }
+
+        #sidebar h3 {
+            text-align: center;
+        }
+
+        #contacts li {
+            list-style: none;
+            padding: 10px;
+            background: #4a5568;
+            margin: 5px 0;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        #contacts li:hover {
+            background: #667eea;
+        }
+
+        /* Main Chat */
+        #main {
+            width: 75%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #topbar {
+            background: #667eea;
+            color: white;
+            padding: 10px;
+        }
+
+        #chatBox {
+            flex: 1;
+            padding: 10px;
+            overflow-y: auto;
+            background: #f1f1f1;
+        }
+
+        .msg {
+            margin: 5px;
+            padding: 8px;
+            background: white;
+            border-radius: 5px;
+            max-width: 60%;
+        }
+
+        #inputArea {
+            display: flex;
+            padding: 10px;
+            background: #ddd;
+        }
+
+        #inputArea input {
+            flex: 1;
+            padding: 10px;
+        }
+
+        #inputArea button {
+            padding: 10px;
+            background: #667eea;
+            color: white;
+            border: none;
+        }
+
+        #searchBox {
+            width: 90%;
+            padding: 8px;
+        }
+    </style>
 </head>
 <body>
 
-<h2>Welcome {{ username }}</h2>
+<div id="sidebar">
+    <h3>{{ username }}</h3>
 
-<h3>Search User</h3>
-<input id="searchBox" placeholder="username">
-<button onclick="search()">Search</button>
+    <input id="searchBox" placeholder="Search user">
+    <button onclick="search()">Search</button>
 
-<div id="results"></div>
+    <div id="results"></div>
 
-<h3>Contacts</h3>
-<ul id="contacts"></ul>
+    <h3>Contacts</h3>
+    <ul id="contacts"></ul>
+</div>
 
-<h3>Chat</h3>
-<div id="chatBox" style="border:1px solid black;height:200px;overflow:auto;"></div>
-<input id="msg">
-<button onclick="send()">Send</button>
+<div id="main">
+    <div id="topbar">Chat</div>
+
+    <div id="chatBox"></div>
+
+    <div id="inputArea">
+        <input id="msg" placeholder="Type message...">
+        <button onclick="send()">Send</button>
+    </div>
+</div>
 
 <script>
 let username = "{{ username }}";
@@ -57,13 +148,14 @@ async function loadContacts(){
     data.forEach(c=>{
         let li = document.createElement("li");
         li.innerText = c.username;
-        li.onclick = ()=> openChat(c._id);
+        li.onclick = ()=> openChat(c._id, c.username);
         list.appendChild(li);
     });
 }
 
-async function openChat(id){
+async function openChat(id, name){
     currentChat = id;
+    document.getElementById("topbar").innerText = name;
     loadMessages();
 }
 
@@ -75,7 +167,7 @@ async function loadMessages(){
     box.innerHTML = "";
 
     data.forEach(m=>{
-        box.innerHTML += `<div>${m.sender}: ${m.message}</div>`;
+        box.innerHTML += `<div class="msg">${m.sender}: ${m.message}</div>`;
     });
 }
 
