@@ -1,109 +1,140 @@
-from fastapi import FastAPI, Form, Request, Response
+# app.py
+from fastapi import FastAPI, Request, Form, HTTPException, Header, Response, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse
-import httpx
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+import requests
+import os
 
-API_BASE = "https://web-production-7d78e.up.railway.app"
+app = FastAPI()
 
-app = FastAPI(title="ChatX Frontend")
+# Serve static files (CSS/JS)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
-CSS_STYLES = """
-<style>
-body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #333; }
-h1, h2 { text-align: center; color: #4a76a8; }
-a { color: #4a76a8; text-decoration: none; margin: 5px; }
-a:hover { text-decoration: underline; }
-form { background: white; padding: 20px; margin: 50px auto; max-width: 400px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-input, select, button { width: 100%; padding: 10px; margin: 8px 0; border-radius: 5px; border: 1px solid #ccc; }
-button { background-color: #4a76a8; color: white; border: none; cursor: pointer; font-weight: bold; }
-button:hover { background-color: #3b5f8d; }
-.bottom-link { text-align: center; margin-top: 15px; font-size: 0.9em; }
-</style>
-"""
+# Templates folder
+templates = Jinja2Templates(directory="templates")
 
-# ------------------- Helper -------------------
-def check_token_cookie(request: Request):
-    token = request.cookies.get("chatx_token")
-    return token
+# Your API base
+API_URL = "https://web-production-7d78e.up.railway.app"
 
-# ------------------- Routes -------------------
+# -----------------------------
+# Home redirects to login or dashboard
+# -----------------------------
 @app.get("/", response_class=HTMLResponse)
-async def login_form(request: Request):
-    token = check_token_cookie(request)
+async def home(token: str = Cookie(None)):
     if token:
-        # Already logged in, redirect to chat
-        return RedirectResponse(f"/chat?token={token}")
-    return f"""
-    {CSS_STYLES}
-    <h2>Login to ChatX</h2>
-    <form action="/login" method="post">
-        Email: <input name="email" type="email" required>
-        Password: <input type="password" name="password" required>
-        <button type="submit">Login</button>
-    </form>
-    <div class="bottom-link">
-        Don't have an account? <a href='/signup'>Create account / Signup here</a>
-    </div>
-    """
+        return RedirectResponse("/dashboard")
+    return RedirectResponse("/login")
 
-@app.get("/signup", response_class=HTMLResponse)
-async def signup_form(request: Request):
-    token = check_token_cookie(request)
+# -----------------------------
+# Login
+# -----------------------------
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, token: str = Cookie(None)):
     if token:
-        return RedirectResponse(f"/chat?token={token}")
-    return f"""
-    {CSS_STYLES}
-    <h2>Create Your Account</h2>
-    <form action="/signup" method="post">
-        Username: <input name="username" required>
-        Email: <input name="email" type="email" required>
-        Password: <input type="password" name="password" required>
-        <button type="submit">Signup</button>
-    </form>
-    <div class="bottom-link">
-        Already have an account? <a href='/'>Login here</a>
-    </div>
-    """
-
-@app.post("/signup")
-async def signup(response: Response, username: str = Form(...), email: str = Form(...), password: str = Form(...)):
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(f"{API_BASE}/users/signup", json={
-            "username": username,
-            "email": email,
-            "password": password
-        })
-    if resp.status_code != 200:
-        return HTMLResponse(f"{CSS_STYLES}<h3>Error: {resp.json().get('detail')}</h3><a href='/signup'>Try again</a>")
-    # Redirect to login page
-    return RedirectResponse("/", status_code=302)
+        return RedirectResponse("/dashboard")
+    return templates.TemplateResponse("login.html", {"request": request})
 
 @app.post("/login")
-async def login(response: Response, email: str = Form(...), password: str = Form(...)):
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(f"{API_BASE}/users/login", json={"email": email, "password": password})
-    if resp.status_code != 200:
-        return HTMLResponse(f"{CSS_STYLES}<h3>Invalid credentials!</h3><a href='/'>Try again</a>")
-    token = resp.json()["token"]
-    # Set token in HTTP-only cookie (persistent across tabs)
-    redirect = RedirectResponse(f"/chat?token={token}", status_code=302)
-    redirect.set_cookie(key="chatx_token", value=token, httponly=True, max_age=86400*7)  # 7 days
-    return redirect
+async def login_post(response: Response, email: str = Form(...), password: str = Form(...)):
+    r = requests.post(f"{API_URL}/users/login", json={"email": email, "password": password})
+    if r.status_code != 200:
+        return HTMLResponse(f"<h3>Login failed: {r.json()['detail']}</h3><a href='/login'>Try again</a>")
+    token = r.json()["token"]
+    resp = RedirectResponse("/dashboard", status_code=302)
+    resp.set_cookie(key="token", value=token, httponly=True)
+    return resp
 
-@app.get("/chat", response_class=HTMLResponse)
-async def chat_page(request: Request, token: str = None):
-    # Use token from cookie if not passed in URL
-    token = token or request.cookies.get("chatx_token")
-    if not token:
-        return RedirectResponse("/")
-    return f"""
-    {CSS_STYLES}
-    <h2>Welcome to ChatX Chat</h2>
-    <p>Your session is active! Token: {token[:10]}... (hidden for security)</p>
-    <a href='/logout'>Logout</a>
-    """
+# -----------------------------
+# Signup
+# -----------------------------
+@app.get("/signup", response_class=HTMLResponse)
+async def signup_page(request: Request):
+    return templates.TemplateResponse("signup.html", {"request": request})
 
+@app.post("/signup")
+async def signup_post(response: Response, username: str = Form(...), email: str = Form(...), password: str = Form(...)):
+    r = requests.post(f"{API_URL}/users/signup", json={"username": username, "email": email, "password": password})
+    if r.status_code != 200:
+        return HTMLResponse(f"<h3>Signup failed: {r.json()['detail']}</h3><a href='/signup'>Try again</a>")
+    # After signup, auto-login
+    r_login = requests.post(f"{API_URL}/users/login", json={"email": email, "password": password})
+    token = r_login.json()["token"]
+    resp = RedirectResponse("/dashboard", status_code=302)
+    resp.set_cookie(key="token", value=token, httponly=True)
+    return resp
+
+# -----------------------------
+# Logout
+# -----------------------------
 @app.get("/logout")
 async def logout():
-    redirect = RedirectResponse("/", status_code=302)
-    redirect.delete_cookie("chatx_token")
-    return redirect
+    resp = RedirectResponse("/login", status_code=302)
+    resp.delete_cookie("token")
+    return resp
+
+# -----------------------------
+# Dashboard
+# -----------------------------
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request, token: str = Cookie(None)):
+    if not token:
+        return RedirectResponse("/login")
+    # Fetch requests count
+    r = requests.get(f"{API_URL}/users/me/requests", headers={"Authorization": f"Bearer {token}"})
+    requests_count = len(r.json()) if r.status_code == 200 else 0
+    return templates.TemplateResponse("dashboard.html", {"request": request, "requests_count": requests_count})
+
+# -----------------------------
+# Search Users
+# -----------------------------
+@app.get("/search", response_class=HTMLResponse)
+async def search_page(request: Request, token: str = Cookie(None), q: str = ""):
+    if not token:
+        return RedirectResponse("/login")
+    r = requests.get(f"{API_URL}/users/search", params={"username": q})
+    users = r.json() if r.status_code == 200 else []
+    return templates.TemplateResponse("search.html", {"request": request, "users": users, "q": q, "token": token})
+
+@app.post("/send_request/{user_id}")
+async def send_request(user_id: str, token: str = Cookie(None)):
+    if not token:
+        return RedirectResponse("/login")
+    requests.post(f"{API_URL}/users/send_request/{user_id}", headers={"Authorization": f"Bearer {token}"})
+    return RedirectResponse("/search")
+
+# -----------------------------
+# Contact List
+# -----------------------------
+@app.get("/contacts", response_class=HTMLResponse)
+async def contacts_page(request: Request, token: str = Cookie(None)):
+    if not token:
+        return RedirectResponse("/login")
+    r = requests.get(f"{API_URL}/users/me/contacts", headers={"Authorization": f"Bearer {token}"})
+    contacts = r.json() if r.status_code == 200 else []
+    return templates.TemplateResponse("contacts.html", {"request": request, "contacts": contacts, "token": token})
+
+@app.post("/remove_contact/{user_id}")
+async def remove_contact(user_id: str, token: str = Cookie(None)):
+    if not token:
+        return RedirectResponse("/login")
+    requests.post(f"{API_URL}/users/remove_contact/{user_id}", headers={"Authorization": f"Bearer {token}"})
+    return RedirectResponse("/contacts")
+
+# -----------------------------
+# Chat
+# -----------------------------
+@app.get("/chat/{user_id}", response_class=HTMLResponse)
+async def chat_page(request: Request, user_id: str, token: str = Cookie(None)):
+    if not token:
+        return RedirectResponse("/login")
+    r = requests.get(f"{API_URL}/chat/history/{user_id}", headers={"Authorization": f"Bearer {token}"})
+    messages = r.json() if r.status_code == 200 else []
+    return templates.TemplateResponse("chat.html", {"request": request, "messages": messages, "chat_with": user_id, "token": token})
+
+@app.post("/chat/{user_id}")
+async def send_chat(user_id: str, message: str = Form(...), token: str = Cookie(None)):
+    if not token:
+        return RedirectResponse("/login")
+    requests.post(f"{API_URL}/chat/send", json={"receiver_id": user_id, "message": message}, headers={"Authorization": f"Bearer {token}"})
+    return RedirectResponse(f"/chat/{user_id}")
