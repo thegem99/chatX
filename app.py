@@ -1,14 +1,11 @@
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 import httpx
 
-API_BASE = "https://web-production-7d78e.up.railway.app"  # Your Railway API
+API_BASE = "https://web-production-7d78e.up.railway.app"
 
 app = FastAPI(title="ChatX Frontend")
 
-# -------------------
-# CSS Styles
-# -------------------
 CSS_STYLES = """
 <style>
 body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #333; }
@@ -23,11 +20,18 @@ button:hover { background-color: #3b5f8d; }
 </style>
 """
 
-# -------------------
-# Routes
-# -------------------
+# ------------------- Helper -------------------
+def check_token_cookie(request: Request):
+    token = request.cookies.get("chatx_token")
+    return token
+
+# ------------------- Routes -------------------
 @app.get("/", response_class=HTMLResponse)
-async def login_form():
+async def login_form(request: Request):
+    token = check_token_cookie(request)
+    if token:
+        # Already logged in, redirect to chat
+        return RedirectResponse(f"/chat?token={token}")
     return f"""
     {CSS_STYLES}
     <h2>Login to ChatX</h2>
@@ -42,7 +46,10 @@ async def login_form():
     """
 
 @app.get("/signup", response_class=HTMLResponse)
-async def signup_form():
+async def signup_form(request: Request):
+    token = check_token_cookie(request)
+    if token:
+        return RedirectResponse(f"/chat?token={token}")
     return f"""
     {CSS_STYLES}
     <h2>Create Your Account</h2>
@@ -57,8 +64,8 @@ async def signup_form():
     </div>
     """
 
-@app.post("/signup", response_class=HTMLResponse)
-async def signup(username: str = Form(...), email: str = Form(...), password: str = Form(...)):
+@app.post("/signup")
+async def signup(response: Response, username: str = Form(...), email: str = Form(...), password: str = Form(...)):
     async with httpx.AsyncClient() as client:
         resp = await client.post(f"{API_BASE}/users/signup", json={
             "username": username,
@@ -66,14 +73,37 @@ async def signup(username: str = Form(...), email: str = Form(...), password: st
             "password": password
         })
     if resp.status_code != 200:
-        return f"{CSS_STYLES}<h3>Error: {resp.json().get('detail')}</h3><a href='/signup'>Try again</a>"
+        return HTMLResponse(f"{CSS_STYLES}<h3>Error: {resp.json().get('detail')}</h3><a href='/signup'>Try again</a>")
+    # Redirect to login page
     return RedirectResponse("/", status_code=302)
 
-@app.post("/login", response_class=HTMLResponse)
-async def login(email: str = Form(...), password: str = Form(...)):
+@app.post("/login")
+async def login(response: Response, email: str = Form(...), password: str = Form(...)):
     async with httpx.AsyncClient() as client:
         resp = await client.post(f"{API_BASE}/users/login", json={"email": email, "password": password})
     if resp.status_code != 200:
-        return f"{CSS_STYLES}<h3>Invalid credentials!</h3><a href='/'>Try again</a>"
+        return HTMLResponse(f"{CSS_STYLES}<h3>Invalid credentials!</h3><a href='/'>Try again</a>")
     token = resp.json()["token"]
-    return RedirectResponse(f"/chat?token={token}", status_code=302)
+    # Set token in HTTP-only cookie (persistent across tabs)
+    redirect = RedirectResponse(f"/chat?token={token}", status_code=302)
+    redirect.set_cookie(key="chatx_token", value=token, httponly=True, max_age=86400*7)  # 7 days
+    return redirect
+
+@app.get("/chat", response_class=HTMLResponse)
+async def chat_page(request: Request, token: str = None):
+    # Use token from cookie if not passed in URL
+    token = token or request.cookies.get("chatx_token")
+    if not token:
+        return RedirectResponse("/")
+    return f"""
+    {CSS_STYLES}
+    <h2>Welcome to ChatX Chat</h2>
+    <p>Your session is active! Token: {token[:10]}... (hidden for security)</p>
+    <a href='/logout'>Logout</a>
+    """
+
+@app.get("/logout")
+async def logout():
+    redirect = RedirectResponse("/", status_code=302)
+    redirect.delete_cookie("chatx_token")
+    return redirect
