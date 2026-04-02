@@ -48,7 +48,7 @@ async def login(username: str = Form(...), password: str = Form(...)):
         sessions[username] = token
         return RedirectResponse(f"/app/{username}", status_code=303)
 
-    return HTMLResponse("Login failed")
+    return HTMLResponse(f"Login failed: {res.text}")
 
 # ---------------------- APP PAGE ----------------------
 @app.get("/app/{username}", response_class=HTMLResponse)
