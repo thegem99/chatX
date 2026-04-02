@@ -7,6 +7,10 @@ app = FastAPI()
 # Only a string path to templates folder
 templates = Jinja2Templates(directory="templates")
 
+@app.get("/ping")
+async def ping():
+    return {"status": "ok"}
+    
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
