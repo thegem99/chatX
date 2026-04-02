@@ -4,170 +4,107 @@ from fastapi.templating import Jinja2Templates
 import httpx
 
 app = FastAPI()
-
-# ✅ Correct template initialization
 templates = Jinja2Templates(directory="templates")
 
 API_BASE = "https://web-production-7d78e.up.railway.app"
 
-# Simple in-memory session store
 sessions = {}
 
 # ---------------------- HOME ----------------------
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    try:
-        return templates.TemplateResponse("index.html", {"request": request})
-    except Exception as e:
-        return HTMLResponse(f"Template error: {str(e)}")
-
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={}
+    )
 
 # ---------------------- SIGNUP ----------------------
 @app.post("/signup")
 async def signup(username: str = Form(...), email: str = Form(...), password: str = Form(...)):
-    try:
-        async with httpx.AsyncClient() as client:
-            res = await client.post(
-                f"{API_BASE}/users/signup",
-                json={"username": username, "email": email, "password": password}
-            )
+    async with httpx.AsyncClient() as client:
+        res = await client.post(f"{API_BASE}/users/signup", json={
+            "username": username,
+            "email": email,
+            "password": password
+        })
 
-        if res.status_code in [200, 201]:
-            return RedirectResponse("/", status_code=303)
+    if res.status_code in [200, 201]:
+        return RedirectResponse("/", status_code=303)
 
-        return HTMLResponse(f"Signup failed: {res.text}")
-
-    except Exception as e:
-        return HTMLResponse(f"Error: {str(e)}")
-
+    return HTMLResponse(f"Signup failed: {res.text}")
 
 # ---------------------- LOGIN ----------------------
 @app.post("/login")
 async def login(username: str = Form(...), password: str = Form(...)):
-    try:
-        async with httpx.AsyncClient() as client:
-            res = await client.post(
-                f"{API_BASE}/users/login",
-                json={"username": username, "password": password}
-            )
+    async with httpx.AsyncClient() as client:
+        res = await client.post(f"{API_BASE}/users/login", json={
+            "username": username,
+            "password": password
+        })
 
-        if res.status_code == 200:
-            data = res.json()
-            token = data.get("token")
+    if res.status_code == 200:
+        token = res.json().get("token")
+        sessions[username] = token
+        return RedirectResponse(f"/app/{username}", status_code=303)
 
-            if not token:
-                return HTMLResponse("Login failed: No token received")
+    return HTMLResponse("Login failed")
 
-            sessions[username] = token
-            return RedirectResponse(f"/app/{username}", status_code=303)
-
-        return HTMLResponse(f"Login failed: {res.text}")
-
-    except Exception as e:
-        return HTMLResponse(f"Error: {str(e)}")
-
-
-# ---------------------- MAIN APP ----------------------
+# ---------------------- APP PAGE ----------------------
 @app.get("/app/{username}", response_class=HTMLResponse)
 async def app_page(request: Request, username: str):
-    token = sessions.get(username)
-
-    if not token:
+    if username not in sessions:
         return RedirectResponse("/", status_code=303)
 
-    try:
-        return templates.TemplateResponse(
-            "app.html",
-            {"request": request, "username": username}
-        )
-    except Exception as e:
-        return HTMLResponse(f"Template error: {str(e)}")
+    return templates.TemplateResponse(
+        request=request,
+        name="app.html",
+        context={"username": username}
+    )
 
-
-# ---------------------- SEARCH USERS ----------------------
+# ---------------------- SEARCH ----------------------
 @app.get("/search/{username}/{query}")
-async def search_user(username: str, query: str):
+async def search(username: str, query: str):
     token = sessions.get(username)
-
-    if not token:
-        return JSONResponse({"error": "Not logged in"}, status_code=401)
-
     headers = {"Authorization": f"Bearer {token}"}
 
     async with httpx.AsyncClient() as client:
         res = await client.get(f"{API_BASE}/users/search/{query}", headers=headers)
-
-    try:
         return res.json()
-    except:
-        return {"error": res.text}
-
 
 # ---------------------- SEND REQUEST ----------------------
 @app.post("/send_request/{username}/{receiver_id}")
 async def send_request(username: str, receiver_id: str):
     token = sessions.get(username)
-
-    if not token:
-        return JSONResponse({"error": "Not logged in"}, status_code=401)
-
     headers = {"Authorization": f"Bearer {token}"}
 
     async with httpx.AsyncClient() as client:
-        res = await client.post(
-            f"{API_BASE}/users/send_request/{receiver_id}",
-            headers=headers
-        )
+        res = await client.post(f"{API_BASE}/users/send_request/{receiver_id}", headers=headers)
+        return {"msg": res.text}
 
-    return {"response": res.text}
-
-
-# ---------------------- GET CONTACTS ----------------------
+# ---------------------- CONTACTS ----------------------
 @app.get("/contacts/{username}")
-async def get_contacts(username: str):
+async def contacts(username: str):
     token = sessions.get(username)
-
-    if not token:
-        return JSONResponse({"error": "Not logged in"}, status_code=401)
-
     headers = {"Authorization": f"Bearer {token}"}
 
     async with httpx.AsyncClient() as client:
         res = await client.get(f"{API_BASE}/users/contacts", headers=headers)
-
-    try:
         return res.json()
-    except:
-        return {"error": res.text}
 
-
-# ---------------------- GET MESSAGES ----------------------
+# ---------------------- CHAT ----------------------
 @app.get("/chat/{username}/{contact_id}")
-async def get_messages(username: str, contact_id: str):
+async def get_chat(username: str, contact_id: str):
     token = sessions.get(username)
-
-    if not token:
-        return JSONResponse({"error": "Not logged in"}, status_code=401)
-
     headers = {"Authorization": f"Bearer {token}"}
 
     async with httpx.AsyncClient() as client:
         res = await client.get(f"{API_BASE}/chat/{contact_id}", headers=headers)
-
-    try:
         return res.json()
-    except:
-        return {"error": res.text}
 
-
-# ---------------------- SEND MESSAGE ----------------------
 @app.post("/chat/{username}/{contact_id}")
-async def send_message(username: str, contact_id: str, message: str = Form(...)):
+async def send_chat(username: str, contact_id: str, message: str = Form(...)):
     token = sessions.get(username)
-
-    if not token:
-        return JSONResponse({"error": "Not logged in"}, status_code=401)
-
     headers = {"Authorization": f"Bearer {token}"}
 
     async with httpx.AsyncClient() as client:
@@ -176,5 +113,4 @@ async def send_message(username: str, contact_id: str, message: str = Form(...))
             headers=headers,
             json={"message": message}
         )
-
-    return {"response": res.text}
+        return {"msg": res.text}
